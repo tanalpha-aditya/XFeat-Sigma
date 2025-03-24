@@ -1,0 +1,2 @@
+python3 hpatch_baseline.py hpatches-sequences-release --method orb
+python3 hpatch_baseline.py hpatches-sequences-release --method sift
