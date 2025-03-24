@@ -6,3 +6,6 @@
 # Ignore specific directories inside HPatch-Baseline
 hpatches-release/
 hpatches-sequences-release/
+
+#Scannet
+Table_2/ScanNet1500-Baseline/ScanNet1500
