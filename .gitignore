@@ -1,1 +1,8 @@
 .DS_Store
+
+# Ignore all zip files inside HPatch-Baseline
+*.zip
+
+# Ignore specific directories inside HPatch-Baseline
+hpatches-release/
+hpatches-sequences-release/
