@@ -1,4 +1,5 @@
 .DS_Store
+**/__pycache__/
 
 # Ignore all zip files inside HPatch-Baseline
 *.zip
@@ -8,4 +9,4 @@ hpatches-release/
 hpatches-sequences-release/
 
 #Scannet
-Table_2/ScanNet1500-Baseline/ScanNet1500
+Table_2/ScanNet1500

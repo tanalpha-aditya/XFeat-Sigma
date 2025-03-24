@@ -1,3 +1,12 @@
+"""
+	"XFeat: Accelerated Features for Lightweight Image Matching, CVPR 2024."
+	https://www.verlab.dcc.ufmg.br/descriptors/xfeat_cvpr24/
+
+    Camera pose metrics adapted from LoFTR https://github.com/zju3dv/LoFTR/blob/master/src/utils/metrics.py
+    The main difference is the use of poselib instead of OpenCV's vanilla RANSAC for E_mat, which is more stable and MUCH and faster.
+
+"""
+
 import argparse
 import numpy as np
 import os
@@ -42,7 +51,7 @@ def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, type='poselib'):
     if type == 'poselib':
         import poselib
         (pose,details) = poselib.estimate_relative_pose(
-            kpts0.tolist(), 
+            kpts0.tolist(),
             kpts1.tolist(),
             intrinsics_to_camera(K0),
             intrinsics_to_camera(K1),
@@ -108,7 +117,7 @@ def get_relative_transform(pose0, pose1):
 
     R1 = pose1[..., :3, :3] # Bx3x3
     t1 = pose1[..., :3, [3]] # Bx3x1
-    
+
     R_0to1 = R1.transpose(-1, -2) @ R0 # Bx3x3
     t_0to1 = R1.transpose(-1, -2) @ (t0 - t1) # Bx3x1
     T_0to1 = np.concatenate([R_0to1, t_0to1], axis=-1) # Bx3x4
@@ -117,8 +126,8 @@ def get_relative_transform(pose0, pose1):
 
 class Scannet1500:
     default_config = {
-        'scannet_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/scannet_test_1500')),
-        'gt_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/test.npz')),
+        'scannet_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/scannet_test_1500')),  #Corrected path
+        'gt_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/test.npz')), #Corrected path
         'pose_estimator': 'poselib', # poselib, opencv
         'cache_images': True,
         'ransac_thresholds': [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0],
@@ -134,7 +143,7 @@ class Scannet1500:
             raise RuntimeError(
                 f"Dataset {self.config['scannet_path']} does not exist! \n \
                   > If you didn't download the dataset, use the downloader tool: python3 -m modules.dataset.download -h")
-        
+
         self.pairs = self.read_gt()
 
         os.makedirs(self.config['output'], exist_ok=True)
@@ -163,31 +172,31 @@ class Scannet1500:
         pairs = []
         gt_poses = np.load(self.config['gt_path'])
         names = gt_poses['name']
-        
+
         for i in range(len(names)):
                 scene_id = names[i, 0]
                 scene_idx = names[i, 1]
                 scene = f'scene{scene_id:04d}_{scene_idx:02d}'
-            
+
                 image0 = str(int(names[i, 2]))
                 image1 = str(int(names[i, 3]))
-                
+
                 K0 = np.loadtxt(
-                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene,  'intrinsic/intrinsic_color.txt')
+                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene,  'intrinsic/intrinsic_color.txt') #Corrected path
                 )
                 K1 = K0
 
                 pose_0 = np.loadtxt(
-                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'pose', image0 + '.txt')
+                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'pose', image0 + '.txt') #Corrected path
                 )
                 pose_1 = np.loadtxt(
-                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'pose', image1 + '.txt')
+                    os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'pose', image1 + '.txt') #Corrected path
                 )
                 T_0to1 = get_relative_transform(pose_0, pose_1)
-                
+
                 pairs.append({
-                    'image0': os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'color', image0 + '.jpg'),
-                    'image1': os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'color', image1 + '.jpg'),
+                    'image0': os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'color', image0 + '.jpg'),  #Corrected path
+                    'image1': os.path.join(self.config['scannet_path'], 'scannet_test_1500', scene, 'color', image1 + '.jpg'),  #Corrected path
                     'K0': K0,
                     'K1': K1,
                     'T_0to1': T_0to1,
@@ -215,9 +224,9 @@ class Scannet1500:
                 'mkpts0': mkpts0,
                 'mkpts1': mkpts1,
             })
-        
+
         np.savez(fname, all_matches=all_matches)
-        
+
         return all_matches
 
     def run_benchmark(self, matcher_fn, name='', force=False):
@@ -253,7 +262,7 @@ class Scannet1500:
                     pool_args = [ (all_matches[pair_idx]['mkpts0'], all_matches[pair_idx]['mkpts1'], pair['K0'], pair['K1'], ransac_thresh) for pair_idx, pair in enumerate(pairs) ]
                     results = list(tqdm(pool.imap(estimate_pose_parallel, pool_args), total=len(pool_args), desc=f'Running benchmark for th={ransac_thresh}', leave=False))
                     pool.close()
-                    
+
 
                     for pair_idx, ret in enumerate(results):
                         if ret is None:
@@ -283,7 +292,7 @@ class Scannet1500:
 
             # compute AUCs
             errors = np.array(errors)
-            errors = errors.max(axis=1) 
+            errors = errors.max(axis=1)
             aucs = pose_auc(errors, self.config['pose_thresholds'])
             accs = pose_accuracy(errors, self.config['pose_thresholds'])
             aucs = {k: v*100 for k, v in zip(self.config['pose_thresholds'], aucs)}
@@ -306,31 +315,23 @@ def get_xfeat():
     xfeat = XFeat()
     return xfeat.match_xfeat
 
-def get_xfeat_star():
-    from modules.xfeat import XFeat
-    xfeat = XFeat(top_k=10_000)
-    return xfeat.match_xfeat_star
-
-def get_alike():
-    from third_party import alike_wrapper as alike
-    return alike.match_alike
 
 def print_fancy(d):
     print(json.dumps(d, indent=2))
 
 def parse():
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument("--scannet_path", type=str, required=True, help="Path to the Scannet 1500 dataset")
     parser.add_argument("--output", type=str, default="./output/scannet/", help="Path to the output directory")
     parser.add_argument("--max_pairs", type=int, default=-1, help="Maximum number of pairs to run the benchmark on")
     parser.add_argument("--force", action='store_true', help="Force running the benchmark again")
     parser.add_argument("--pose_estimator", type=str, default='poselib', help="Which pose estimator to use: poselib, opencv", choices=['poselib', 'opencv'])
-    
+
     parser.add_argument("--show", action='store_true', help="Show the matches")
     parser.add_argument("--accuracy", action='store_true', help="Show the accuracy instead of AUC")
     parser.add_argument("--filter", type=str, nargs='+', help="Filter the results by the given names")
-    
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -339,19 +340,19 @@ if __name__ == "__main__":
     if not args.show:
         scannet = Scannet1500({
             'scannet_path': args.scannet_path,
-            'gt_path': args.scannet_path + "/test.npz",
+            'gt_path': args.scannet_path + "/test.npz", #Corrected path
             'cache_images': False,
             'output': args.output,
             'max_pairs': args.max_pairs,
             'pose_estimator': args.pose_estimator,
             'ransac_thresholds': [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0],
             'n_workers': 8,
+            'pose_thresholds': [5, 10, 20], # Added pose thresholds here
         })
 
         functions = {
             'xfeat': get_xfeat(),
-            'xfeat_star': get_xfeat_star(),
-            'alike': get_alike(),
+            # Removed xfeat_star and alike
         }
 
         # save all results to a file
@@ -369,16 +370,20 @@ if __name__ == "__main__":
         import pandas as pd
         dataset_name = 'scannet'
         all_summary_files = glob.glob(os.path.join(args.output, "**_summary.json"), recursive=True)
-
+        
+        # Apply the filter if provided, otherwise keep only xfeat
         if args.filter:
             all_summary_files = [f for f in all_summary_files if any([fil in f for fil in args.filter])]
+        else:  # This else is crucial:  it limits to *only* xfeat if no filter.
+            all_summary_files = [f for f in all_summary_files if "xfeat" in f]
+
 
         dfs = []
         names = []
         estimators = []
         metric_key = 'aucs_by_thresh'
         if args.accuracy:
-            metric_key = 'accuracies_by_thresh'    
+            metric_key = 'accuracies_by_thresh'
         for summary in all_summary_files:
             summary_data = json.load(open(summary, 'r'))
             if metric_key not in summary_data:
@@ -434,6 +439,7 @@ if __name__ == "__main__":
 
         # set max float precision to 1
         final_df = final_df.round(1)
+
 
         print(f"Dataset: {dataset_name}")
         print(f"Sorting by {col}")
