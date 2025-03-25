@@ -19,6 +19,9 @@ import multiprocessing as mp
 np.set_printoptions(suppress=True)
 
 def intrinsics_to_camera(K):
+    """
+        Converts a 3x3 intrinsic matrix (K) into a dictionary format used by poselib.
+    """
     px, py = K[0, 2], K[1, 2]
     fx, fy = K[0, 0], K[1, 1]
     return {
@@ -29,15 +32,24 @@ def intrinsics_to_camera(K):
     }
 
 def angle_error_vec(v1, v2):
+    """
+    Calculates the angular error (in degrees) between two vectors.
+    """
     n = np.linalg.norm(v1) * np.linalg.norm(v2)
     return np.rad2deg(np.arccos(np.clip(np.dot(v1, v2) / n, -1.0, 1.0)))
 
 def angle_error_mat(R1, R2):
+    """
+    Calculates the angular error (in degrees) between two rotation matrices.
+    """
     cos = (np.trace(np.dot(R1.T, R2)) - 1) / 2
     cos = np.clip(cos, -1., 1.)  # numercial errors can make it out of bounds
     return np.rad2deg(np.abs(np.arccos(cos)))
 
 def compute_pose_error(T_0to1, R, t):
+    """
+    Computes the pose error between the estimated and the ground truth poses.
+    """
     R_gt = T_0to1[:3, :3]
     t_gt = T_0to1[:3, 3]
     error_t = angle_error_vec(t, t_gt)
@@ -46,6 +58,19 @@ def compute_pose_error(T_0to1, R, t):
     return error_t, error_R
 
 def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, type='poselib'):
+    """
+    It estimates the relative pose.
+
+        Input: Matched keypoints (kpts0, kpts1), intrinsic matrices (K0, K1), RANSAC threshold (thresh), confidence (conf), and the type of estimator (poselib or opencv).
+
+        poselib branch: Uses the poselib library for robust pose estimation. This is the preferred method because it's generally more stable and accurate than OpenCV's RANSAC.
+
+        opencv branch: Uses OpenCV's findEssentialMat and recoverPose for pose estimation. This is a fallback option.
+
+        Output: Returns the estimated rotation matrix (R), translation vector (t), and inlier mask. 
+
+    """
+
     if len(kpts0) < 5:
         return None
     if type == 'poselib':
@@ -92,9 +117,15 @@ def estimate_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999, type='poselib'):
     return ret
 
 def estimate_pose_parallel(args):
+    """
+    A wrapper function that allows estimate_pose to be called in parallel using multiprocessing.
+    """
     return estimate_pose(*args)
 
 def pose_auc(errors, thresholds):
+    """
+        Calculates the Area Under the Curve (AUC) for pose errors.
+    """
     sort_idx = np.argsort(errors)
     errors = np.array(errors.copy())[sort_idx]
     recall = (np.arange(len(errors)) + 1) / len(errors)
@@ -109,9 +140,15 @@ def pose_auc(errors, thresholds):
     return aucs
 
 def pose_accuracy(errors, thresholds):
+    """
+    Calculates the pose accuracy for different error thresholds.
+    """
     return [np.mean(errors < t) * 100 for t in thresholds]
 
 def get_relative_transform(pose0, pose1):
+    """
+    Calculates the relative transformation between two poses.
+    """
     R0 = pose0[..., :3, :3] # Bx3x3
     t0 = pose0[..., :3, [3]] # Bx3x1
 
@@ -125,15 +162,30 @@ def get_relative_transform(pose0, pose1):
     return T_0to1
 
 class Scannet1500:
+    """
+    The main class for handling the ScanNet-1500 dataset.
+
+        __init__: Initializes the class, loads the dataset information, and sets up configuration parameters.
+
+        load_images: (Optional) Caches images in memory for faster access.
+
+        read_image: Loads an image (either from the cache or from disk).
+
+        read_gt: Reads the ground-truth pose information from the test.npz file and constructs a list of image pairs with their associated data (image paths, intrinsics, relative poses).
+
+        extract_and_save_matches: Extracts matches using the provided matcher_fn and saves them to a file. This avoids recomputing matches every time.
+
+        run_benchmark: The main evaluation loop. It iterates through the image pairs, extracts matches, estimates the pose, calculates errors, and computes the evaluation metrics (AUC, accuracy). It can also run the pose estimation in parallel using multiprocessing.
+    """
     default_config = {
-        'scannet_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/scannet_test_1500')),  #Corrected path
-        'gt_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/ScanNet/test.npz')), #Corrected path
+        'scannet_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../ScanNet1500/scannet_test_1500')),  #Corrected path
+        'gt_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '../ScanNet1500/test.npz')), #Corrected path
         'pose_estimator': 'poselib', # poselib, opencv
         'cache_images': True,
         'ransac_thresholds': [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0],
         'pose_thresholds': [5, 10, 20],
         'max_pairs': -1,
-        'output': './output/scannet/',
+        'output': './output/Xfeat/',
         'n_workers': 8,
     }
 
@@ -311,10 +363,12 @@ class Scannet1500:
         return aucs_by_thresh
 
 def get_xfeat():
+    """
+    Instantiates and return the xfeat model.
+    """
     from modules.xfeat import XFeat
     xfeat = XFeat()
     return xfeat.match_xfeat
-
 
 def print_fancy(d):
     print(json.dumps(d, indent=2))
@@ -352,7 +406,6 @@ if __name__ == "__main__":
 
         functions = {
             'xfeat': get_xfeat(),
-            # Removed xfeat_star and alike
         }
 
         # save all results to a file
