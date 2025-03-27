@@ -11,3 +11,16 @@ hpatches-sequences-release/
 #Scannet
 Table_2/ScanNet1500
 Table_2/ALIKE_Baseline/third_party/ALIKE
+
+MegaDepth_v1_train.tar.gz
+MegaDepth_v1_val.tar.gz
+
+MegaDepth_v1_train/
+MegaDepth_v1_val/
+
+New/
+
+train_test_indices.tar
+Megadepth_traintestindices_split.py
+train_test_indices
+Training_NoSyntheticData
