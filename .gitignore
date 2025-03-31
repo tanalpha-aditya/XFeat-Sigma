@@ -24,3 +24,5 @@ train_test_indices.tar
 Megadepth_traintestindices_split.py
 train_test_indices
 Training_NoSyntheticData
+
+megadepth_indices.tar
