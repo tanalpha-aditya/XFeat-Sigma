@@ -39,3 +39,6 @@ TrainingCode/Idea3_improvement_CombiningAbove2Idea/accelerated_features/figs
 TrainingCode/Idea3_improvement_CombiningAbove2Idea/accelerated_features/weights
 
 FrameGeneration/ORB/input
+FrameGeneration/XFEAT/input
+
+FrameGeneration/XFEAT/xfeat_github/weights
