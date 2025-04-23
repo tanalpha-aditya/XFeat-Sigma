@@ -21,3 +21,11 @@ auc@20 :  62.2
 mAcc@5: 55.5 
 mAcc@10: 69.9 
 mAcc@20: 78.4 
+
+Xfeat_refine
+auc@5 :  44.4
+auc@10 :  59.0
+auc@20 :  70.2
+mAcc@5: 66.7 
+mAcc@10: 77.8 
+mAcc@20: 84.1 
