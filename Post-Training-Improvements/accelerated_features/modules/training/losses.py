@@ -5,7 +5,7 @@ from modules.dataset.megadepth import megadepth_warper
 
 from modules.training import utils
 
-from modules.third_party.alike_wrapper import extract_alike_kpts
+from third_party.alike_wrapper import extract_alike_kpts
 
 def dual_softmax_loss(X, Y, temp = 0.2):
     if X.size() != Y.size() or X.dim() != 2 or Y.dim() != 2:

@@ -7,8 +7,6 @@ import argparse
 import os
 import time
 import sys
-from tqdm import tqdm
-import datetime
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="XFeat training script.")
@@ -113,12 +111,10 @@ class Trainer():
         ##################### MEGADEPTH INIT ##########################
         if model_name in ('xfeat_default', 'xfeat_megadepth'):
             TRAIN_BASE_PATH = f"{megadepth_root_path}/train_data/megadepth_indices"
-            TRAINVAL_DATA_SOURCE = f"{megadepth_root_path}/MegaDepth_v1/phoenix/S6/zl548/MegaDepth_v1"
+            TRAINVAL_DATA_SOURCE = f"{megadepth_root_path}/MegaDepth_v1"
 
             TRAIN_NPZ_ROOT = f"{TRAIN_BASE_PATH}/scene_info_0.1_0.7"
-            print(TRAIN_BASE_PATH)
-            print(TRAINVAL_DATA_SOURCE)
-            print(TRAIN_NPZ_ROOT)
+
             npz_paths = glob.glob(TRAIN_NPZ_ROOT + '/*.npz')[:]
             data = torch.utils.data.ConcatDataset( [MegaDepthDataset(root_dir = TRAINVAL_DATA_SOURCE,
                             npz_path = path) for path in tqdm.tqdm(npz_paths, desc="[MegaDepth] Loading metadata")] )
@@ -156,157 +152,141 @@ class Trainer():
         
         if self.data_iter is not None:
             d = next(self.data_iter)
-            
-            
-        start_time = time.time() # <-- Record start time
-        print(f"[Trainer] Starting training loop at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}...")
-        
-        pbar = tqdm.tqdm(range(self.steps))
-        for i in pbar:
-            if not self.dry_run:
-                if self.data_iter is not None:
-                    try:
-                        # Get the next MD batch
-                        d = next(self.data_iter)
 
-                    except StopIteration:
-                        print("End of DATASET!")
-                        # If StopIteration is raised, create a new iterator.
-                        self.data_iter = iter(self.data_loader)
-                        d = next(self.data_iter)
+        with tqdm.tqdm(total=self.steps) as pbar:
+            for i in range(self.steps):
+                if not self.dry_run:
+                    if self.data_iter is not None:
+                        try:
+                            # Get the next MD batch
+                            d = next(self.data_iter)
 
-                if self.augmentor is not None:
-                    #Grab synthetic data
-                    p1s, p2s, H1, H2 = make_batch(self.augmentor, difficulty)
+                        except StopIteration:
+                            print("End of DATASET!")
+                            # If StopIteration is raised, create a new iterator.
+                            self.data_iter = iter(self.data_loader)
+                            d = next(self.data_iter)
 
-            if d is not None:
-                for k in d.keys():
-                    if isinstance(d[k], torch.Tensor):
-                        d[k] = d[k].to(self.dev)
-            
-                p1, p2 = d['image0'], d['image1']
-                positives_md_coarse = megadepth_warper.spvs_coarse(d, 8)
+                    if self.augmentor is not None:
+                        #Grab synthetic data
+                        p1s, p2s, H1, H2 = make_batch(self.augmentor, difficulty)
 
-            if self.augmentor is not None:
-                h_coarse, w_coarse = p1s[0].shape[-2] // 8, p1s[0].shape[-1] // 8
-                _ , positives_s_coarse = get_corresponding_pts(p1s, p2s, H1, H2, self.augmentor, h_coarse, w_coarse)
-
-            #Join megadepth & synthetic data
-            with torch.inference_mode():
-                #RGB -> GRAY
                 if d is not None:
-                    p1 = p1.mean(1, keepdim=True)
-                    p2 = p2.mean(1, keepdim=True)
+                    for k in d.keys():
+                        if isinstance(d[k], torch.Tensor):
+                            d[k] = d[k].to(self.dev)
+                
+                    p1, p2 = d['image0'], d['image1']
+                    positives_md_coarse = megadepth_warper.spvs_coarse(d, 8)
+
                 if self.augmentor is not None:
-                    p1s = p1s.mean(1, keepdim=True)
-                    p2s = p2s.mean(1, keepdim=True)
+                    h_coarse, w_coarse = p1s[0].shape[-2] // 8, p1s[0].shape[-1] // 8
+                    _ , positives_s_coarse = get_corresponding_pts(p1s, p2s, H1, H2, self.augmentor, h_coarse, w_coarse)
 
-                #Cat two batches
-                if self.model_name in ('xfeat_default'):
-                    p1 = torch.cat([p1s, p1], dim=0)
-                    p2 = torch.cat([p2s, p2], dim=0)
-                    positives_c = positives_s_coarse + positives_md_coarse
-                elif self.model_name in ('xfeat_synthetic'):
-                    p1 = p1s ; p2 = p2s
-                    positives_c = positives_s_coarse
-                else:
-                    positives_c = positives_md_coarse
+                #Join megadepth & synthetic data
+                with torch.inference_mode():
+                    #RGB -> GRAY
+                    if d is not None:
+                        p1 = p1.mean(1, keepdim=True)
+                        p2 = p2.mean(1, keepdim=True)
+                    if self.augmentor is not None:
+                        p1s = p1s.mean(1, keepdim=True)
+                        p2s = p2s.mean(1, keepdim=True)
 
-            #Check if batch is corrupted with too few correspondences
-            is_corrupted = False
-            for p in positives_c:
-                if len(p) < 30:
-                    is_corrupted = True
+                    #Cat two batches
+                    if self.model_name in ('xfeat_default'):
+                        p1 = torch.cat([p1s, p1], dim=0)
+                        p2 = torch.cat([p2s, p2], dim=0)
+                        positives_c = positives_s_coarse + positives_md_coarse
+                    elif self.model_name in ('xfeat_synthetic'):
+                        p1 = p1s ; p2 = p2s
+                        positives_c = positives_s_coarse
+                    else:
+                        positives_c = positives_md_coarse
 
-            if is_corrupted:
-                print("Corrupted datapoint found, skipping")
-                continue
+                #Check if batch is corrupted with too few correspondences
+                is_corrupted = False
+                for p in positives_c:
+                    if len(p) < 30:
+                        is_corrupted = True
 
-            #Forward pass
-            feats1, kpts1, hmap1 = self.net(p1)
-            feats2, kpts2, hmap2 = self.net(p2)
+                if is_corrupted:
+                    continue
 
-            loss_items = []
+                #Forward pass
+                feats1, kpts1, hmap1 = self.net(p1)
+                feats2, kpts2, hmap2 = self.net(p2)
 
-            for b in range(len(positives_c)):
-                #Get positive correspondencies
-                pts1, pts2 = positives_c[b][:, :2], positives_c[b][:, 2:]
+                loss_items = []
 
-                #Grab features at corresponding idxs
-                m1 = feats1[b, :, pts1[:,1].long(), pts1[:,0].long()].permute(1,0)
-                m2 = feats2[b, :, pts2[:,1].long(), pts2[:,0].long()].permute(1,0)
+                for b in range(len(positives_c)):
+                    #Get positive correspondencies
+                    pts1, pts2 = positives_c[b][:, :2], positives_c[b][:, 2:]
 
-                #grab heatmaps at corresponding idxs
-                h1 = hmap1[b, 0, pts1[:,1].long(), pts1[:,0].long()]
-                h2 = hmap2[b, 0, pts2[:,1].long(), pts2[:,0].long()]
-                coords1 = self.net.fine_matcher(torch.cat([m1, m2], dim=-1))
+                    #Grab features at corresponding idxs
+                    m1 = feats1[b, :, pts1[:,1].long(), pts1[:,0].long()].permute(1,0)
+                    m2 = feats2[b, :, pts2[:,1].long(), pts2[:,0].long()].permute(1,0)
 
-                #Compute losses
-                loss_ds, conf = dual_softmax_loss(m1, m2)
-                loss_coords, acc_coords = coordinate_classification_loss(coords1, pts1, pts2, conf)
+                    #grab heatmaps at corresponding idxs
+                    h1 = hmap1[b, 0, pts1[:,1].long(), pts1[:,0].long()]
+                    h2 = hmap2[b, 0, pts2[:,1].long(), pts2[:,0].long()]
+                    coords1 = self.net.fine_matcher(torch.cat([m1, m2], dim=-1))
 
-                loss_kp_pos1, acc_pos1 = alike_distill_loss(kpts1[b], p1[b])
-                loss_kp_pos2, acc_pos2 = alike_distill_loss(kpts2[b], p2[b])
-                loss_kp_pos = (loss_kp_pos1 + loss_kp_pos2)*2.0
-                acc_pos = (acc_pos1 + acc_pos2)/2
+                    #Compute losses
+                    loss_ds, conf = dual_softmax_loss(m1, m2)
+                    loss_coords, acc_coords = coordinate_classification_loss(coords1, pts1, pts2, conf)
 
-                loss_kp =  keypoint_loss(h1, conf) + keypoint_loss(h2, conf)
+                    loss_kp_pos1, acc_pos1 = alike_distill_loss(kpts1[b], p1[b])
+                    loss_kp_pos2, acc_pos2 = alike_distill_loss(kpts2[b], p2[b])
+                    loss_kp_pos = (loss_kp_pos1 + loss_kp_pos2)*2.0
+                    acc_pos = (acc_pos1 + acc_pos2)/2
 
-                loss_items.append(loss_ds.unsqueeze(0))
-                loss_items.append(loss_coords.unsqueeze(0))
-                loss_items.append(loss_kp.unsqueeze(0))
-                loss_items.append(loss_kp_pos.unsqueeze(0))
+                    loss_kp =  keypoint_loss(h1, conf) + keypoint_loss(h2, conf)
 
-                if b == 0:
-                    acc_coarse_0 = check_accuracy(m1, m2)
+                    loss_items.append(loss_ds.unsqueeze(0))
+                    loss_items.append(loss_coords.unsqueeze(0))
+                    loss_items.append(loss_kp.unsqueeze(0))
+                    loss_items.append(loss_kp_pos.unsqueeze(0))
 
-            acc_coarse = check_accuracy(m1, m2)
+                    if b == 0:
+                        acc_coarse_0 = check_accuracy(m1, m2)
 
-            nb_coarse = len(m1)
-            loss = torch.cat(loss_items, -1).mean()
-            loss_coarse = loss_ds.item()
-            loss_coord = loss_coords.item()
-            loss_coord = loss_coords.item()
-            loss_kp_pos = loss_kp_pos.item()
-            loss_l1 = loss_kp.item()
+                acc_coarse = check_accuracy(m1, m2)
 
-            # Compute Backward Pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.)
-            self.opt.step()
-            self.opt.zero_grad()
-            self.scheduler.step()
+                nb_coarse = len(m1)
+                loss = torch.cat(loss_items, -1).mean()
+                loss_coarse = loss_ds.item()
+                loss_coord = loss_coords.item()
+                loss_coord = loss_coords.item()
+                loss_kp_pos = loss_kp_pos.item()
+                loss_l1 = loss_kp.item()
 
-            if (i+1) % self.save_ckpt_every == 0:
-                print('saving iter ', i+1)
-                torch.save(self.net.state_dict(), self.ckpt_save_path + f'/{self.model_name}_{i+1}.pth')
+                # Compute Backward Pass
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.)
+                self.opt.step()
+                self.opt.zero_grad()
+                self.scheduler.step()
 
-            pbar.set_description( 'Loss: {:.4f} acc_c0 {:.3f} acc_c1 {:.3f} acc_f: {:.3f} loss_c: {:.3f} loss_f: {:.3f} loss_kp: {:.3f} #matches_c: {:d} loss_kp_pos: {:.3f} acc_kp_pos: {:.3f}'.format(
-                                                                    loss.item(), acc_coarse_0, acc_coarse, acc_coords, loss_coarse, loss_coord, loss_l1, nb_coarse, loss_kp_pos, acc_pos) )
-            print('Step : ',i)
-            elapsed_time = time.time() - start_time # <-- Time Passed since training started
-            steps_done = i + 1                      # <-- Number of steps completed so far
-            steps_remaining = self.steps - steps_done # <-- Number of steps yet to be done
-            time_per_step = elapsed_time / steps_done
-            estimated_remaining_seconds = time_per_step * steps_remaining
-            remaining_td = datetime.timedelta(seconds=int(estimated_remaining_seconds))
-            print("ETF :", remaining_td)
-            
-            # print("miow")
-            # pbar.update(1)
-            # pbar.refresh()
+                if (i+1) % self.save_ckpt_every == 0:
+                    print('saving iter ', i+1)
+                    torch.save(self.net.state_dict(), self.ckpt_save_path + f'/{self.model_name}_{i+1}.pth')
 
-            # Log metrics
-            self.writer.add_scalar('Loss/total', loss.item(), i)
-            self.writer.add_scalar('Accuracy/coarse_synth', acc_coarse_0, i)
-            self.writer.add_scalar('Accuracy/coarse_mdepth', acc_coarse, i)
-            self.writer.add_scalar('Accuracy/fine_mdepth', acc_coords, i)
-            self.writer.add_scalar('Accuracy/kp_position', acc_pos, i)
-            self.writer.add_scalar('Loss/coarse', loss_coarse, i)
-            self.writer.add_scalar('Loss/fine', loss_coord, i)
-            self.writer.add_scalar('Loss/reliability', loss_l1, i)
-            self.writer.add_scalar('Loss/keypoint_pos', loss_kp_pos, i)
-            self.writer.add_scalar('Count/matches_coarse', nb_coarse, i)
+                pbar.set_description( 'Loss: {:.4f} acc_c0 {:.3f} acc_c1 {:.3f} acc_f: {:.3f} loss_c: {:.3f} loss_f: {:.3f} loss_kp: {:.3f} #matches_c: {:d} loss_kp_pos: {:.3f} acc_kp_pos: {:.3f}'.format(
+                                                                        loss.item(), acc_coarse_0, acc_coarse, acc_coords, loss_coarse, loss_coord, loss_l1, nb_coarse, loss_kp_pos, acc_pos) )
+                pbar.update(1)
+
+                # Log metrics
+                self.writer.add_scalar('Loss/total', loss.item(), i)
+                self.writer.add_scalar('Accuracy/coarse_synth', acc_coarse_0, i)
+                self.writer.add_scalar('Accuracy/coarse_mdepth', acc_coarse, i)
+                self.writer.add_scalar('Accuracy/fine_mdepth', acc_coords, i)
+                self.writer.add_scalar('Accuracy/kp_position', acc_pos, i)
+                self.writer.add_scalar('Loss/coarse', loss_coarse, i)
+                self.writer.add_scalar('Loss/fine', loss_coord, i)
+                self.writer.add_scalar('Loss/reliability', loss_l1, i)
+                self.writer.add_scalar('Loss/keypoint_pos', loss_kp_pos, i)
+                self.writer.add_scalar('Count/matches_coarse', nb_coarse, i)
 
 
 
