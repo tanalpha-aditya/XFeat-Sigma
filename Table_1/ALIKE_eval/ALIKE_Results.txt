@@ -1,0 +1,8 @@
+ALIKE for table 1 : 
+
+auc@5 :  48.4
+auc@10 :  60.5
+auc@20 :  70.0
+mAcc@5: 67.7 
+mAcc@10: 76.5 
+mAcc@20: 81.4
