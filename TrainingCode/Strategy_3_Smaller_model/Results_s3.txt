@@ -1,0 +1,10 @@
+Xfeat_default 
+auc@5 :  31.1
+auc@10 :  44.3
+auc@20 :  56.9
+mAcc@5: 50.3 
+mAcc@10: 63.5 
+mAcc@20: 73.7
+
+Xfeat*_default
+
